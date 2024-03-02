@@ -12,3 +12,12 @@ Python bindings for Pkl.
 ### `pip` only
 1. Create a virtualenv and activate it
 1. `pip install -r requirements.lock`
+
+## Example
+
+`tests/test_evaluator.py` contains an example of how to setup and invoke the evaluator for a Pkl module. To run:
+
+```
+export PKL_EXEC=$(which pkl)
+python tests/test_evaluator.py
+```
