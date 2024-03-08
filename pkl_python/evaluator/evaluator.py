@@ -20,7 +20,7 @@ class EvaluatorImpl(Evaluator):
         self.evaluator_id = evaluator_id
         self.manager = manager
         self.pending_requests = {}
-        self.closed = False
+        self._closed = False
         self.resource_readers = []
         self.module_readers = []
         self.rand_state = evaluator_id
@@ -28,6 +28,9 @@ class EvaluatorImpl(Evaluator):
     def close(self):
         self.closed = True
         self.manager.close()
+    
+    def closed(self):
+        return self._closed
 
     async def evaluate_expression(self, source: "ModuleSource", expr: str) -> Any:
         bytes = await self.evaluate_expression_raw(source, expr)

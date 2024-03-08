@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 from pydantic import BaseModel, FileUrl
 from . import codes
 
@@ -10,7 +10,7 @@ class IncomingMessage(BaseModel):
 class CreateEvaluatorResponse(IncomingMessage):
     evaluatorId: int
     requestId: int
-    error: int
+    error: Optional[int] = None
 
 
 class EvaluateResponse(IncomingMessage):

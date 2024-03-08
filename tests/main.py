@@ -8,7 +8,8 @@ import asyncio
 from pkl_python.evaluator.module_source import FileSource
 
 async def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(format='%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+    datefmt='%Y-%m-%d:%H:%M:%S', level=logging.DEBUG)
     pkl_command = os.environ.get("PKL_EXEC")
     if not pkl_command:
         raise Exception("PKL_EXEC env var must be set to path to pkl binary!")
@@ -19,4 +20,4 @@ async def main():
     result = await evaluator.evaluate_module(source=FileSource(module_path))
     print(result)
 
-asyncio.run(main())
+asyncio.run(main(), debug=True)

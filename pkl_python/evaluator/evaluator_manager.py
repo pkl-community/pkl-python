@@ -14,6 +14,8 @@ import subprocess
 from typing import List, Tuple
 import logging
 
+log = logging.getLogger(__name__)
+
 def new_evaluator_manager() -> EvaluatorManagerInterface:
     """
     Creates a new EvaluatorManager.
@@ -47,12 +49,13 @@ class EvaluatorManagerImpl(EvaluatorManagerInterface):
     def __init__(self, pkl_command: list = []):
         self.pkl_command = pkl_command
         self.pending_evaluators = {}
-        self.evaluators = []
+        self.evaluators = {}
         self.packer = msgpack.Packer()
         self.unpacker = msgpack.Unpacker()
         self.closed = False
         self.cmd = None
         self.listener_ready = asyncio.Event()
+        self.buffer_bytes = 128
 
     async def start(self):
         if self.closed:
@@ -67,8 +70,14 @@ class EvaluatorManagerImpl(EvaluatorManagerInterface):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
+            asyncio.create_task(self.log_stderr())
             self.listener = asyncio.create_task(self.listen())
             await self.listener_ready.wait()
+
+    async def log_stderr(self):
+        while not self.cmd.stderr.at_eof():
+            stderr_line = await self.cmd.stderr.readline()
+            log.info(stderr_line)
 
     def handle_close(self):
         for future in self.pending_evaluators.values():
@@ -98,45 +107,51 @@ class EvaluatorManagerImpl(EvaluatorManagerInterface):
             print("Received unknown evaluator id:", evaluator_id)
         return ev
 
+    def handle_decode(self, item):
+        decoded = decode(item)
+        log.info(decoded)
+        if type(decoded) is CreateEvaluatorResponse:
+            id = decoded.requestId
+            pending = self.pending_evaluators.get(id)
+            if not pending:
+                log.warning(f"received a message for an unknown request id: {decoded.requestId}")
+            else:
+                pending.set_result(decoded)
+        else:
+            ev = self.get_evaluator(decoded.evaluator_id)
+            log.info(f"Received message for evaluator {decoded.evaluator_id} with code {decoded.code}")
+            if not ev:
+                log.error(f"No evaluator ID in message: {decoded}")
+                pass
+            if decoded.code == codes.EvaluateResponse:
+                ev.handle_evaluate_response(decoded)
+            elif decoded.code == codes.EvaluateLog:
+                ev.handle_log(decoded)
+            elif decoded.code == codes.EvaluateRead:
+                ev.handle_read_resource(decoded)
+            elif decoded.code == codes.EvaluateReadModule:
+                ev.handle_read_module(decoded)
+            elif decoded.code == codes.ListResourcesRequest:
+                ev.handle_list_resources(decoded)
+            elif decoded.code == codes.ListModulesRequest:
+                ev.handle_list_modules(decoded)
+
     async def listen(self):
-        logging.info("listener started")
+        log.info("listener started")
         self.listener_ready.set()
         while not self.cmd.stdout.at_eof():
-            logging.info("waiting for message")
-            line = await self.cmd.stdout.readline()
-            stdout_line = await self.cmd.stdout.readline()
-            logging.info(f"stdout: {stdout_line}")
-            stderr_line = await self.cmd.stderr.readline()
-            logging.info(f"stderr: {stderr_line}")
-            self.decoder.feed(line)
-            for item in self.decoder:
-                decoded = decode(item)
-                if decoded.code == codes.NewEvaluatorResponse:
-                    id = str(decoded.request_id)
-                    pending = self.pending_evaluators.get(id)
-                    if not pending:
-                        print(
-                            "warn: received a message for an unknown request id:",
-                            decoded.request_id,
-                        )
-                    else:
-                        pending.set_result(decoded)
-                else:
-                    ev = self.get_evaluator(decoded.evaluator_id)
-                    if not ev:
-                        continue
-                    if decoded.code == codes.EvaluateResponse:
-                        ev.handle_evaluate_response(decoded)
-                    elif decoded.code == codes.EvaluateLog:
-                        ev.handle_log(decoded)
-                    elif decoded.code == codes.EvaluateRead:
-                        ev.handle_read_resource(decoded)
-                    elif decoded.code == codes.EvaluateReadModule:
-                        ev.handle_read_module(decoded)
-                    elif decoded.code == codes.ListResourcesRequest:
-                        ev.handle_list_resources(decoded)
-                    elif decoded.code == codes.ListModulesRequest:
-                        ev.handle_list_modules(decoded)
+            log.info("waiting for message")
+            try:
+                data = await self.cmd.stdout.read(self.buffer_bytes)
+                log.info(f"stdout: {data}")
+                self.unpacker.feed(data)
+                item = self.unpacker.unpack()
+                log.info(item)
+                self.handle_decode(item)
+            except asyncio.IncompleteReadError:
+                break
+            except msgpack.OutOfData:
+                continue                
 
     def get_start_command(self) -> Tuple[str, List[str]]:
         cmd, args = self.get_command_and_arg_strings()
@@ -164,22 +179,22 @@ class EvaluatorManagerImpl(EvaluatorManagerInterface):
 
         id, req = create_evaluator_request(opts)
         future = asyncio.Future()
+        if id in self.pending_evaluators:
+            raise Exception(f"Request ID {id} already exists")
         self.pending_evaluators[id] = future
 
         await send(self.cmd.stdin, pack_message(self.packer, codes.NewEvaluator, req.model_dump(exclude_none=True)))
-        logging.info("Sent create evaluator request")
+        log.info("Sent create evaluator request")
 
-        while not self.cmd.stderr.at_eof():
-            stderr_line = await self.cmd.stderr.readline()
-            logging.info(stderr_line)
+        # while not self.cmd.stderr.at_eof():
+        #     stderr_line = await self.cmd.stderr.readline()
+        #     log.info(stderr_line)
 
         response = await future
-        logging.info("Received create evaluator response")
+        log.info("Received create evaluator response")
         print(response)
-        response = CreateEvaluatorResponse(**response)
-        ev = EvaluatorImpl(response.evaluator_id, self)
-        self.evaluators[response.evaluator_id] = ev
-
+        ev = EvaluatorImpl(response.evaluatorId, self)
+        self.evaluators[response.evaluatorId] = ev
         return ev
 
     async def new_project_evaluator(
