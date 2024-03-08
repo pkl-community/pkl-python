@@ -12,7 +12,7 @@ import re
 import os
 import subprocess
 from typing import List, Tuple
-
+import logging
 
 def new_evaluator_manager() -> EvaluatorManagerInterface:
     """
@@ -44,14 +44,15 @@ pkl_version_regex = re.compile(f"Pkl ({semver_pattern.pattern}).*")
 
 
 class EvaluatorManagerImpl(EvaluatorManagerInterface):
-    def __init__(self, pkl_command: list):
+    def __init__(self, pkl_command: list = []):
         self.pkl_command = pkl_command
         self.pending_evaluators = {}
         self.evaluators = []
-        self.encoder = msgpack.Packer()
-        self.decoder = msgpack.Unpacker()
+        self.packer = msgpack.Packer()
+        self.unpacker = msgpack.Unpacker()
         self.closed = False
         self.cmd = None
+        self.listener_ready = asyncio.Event()
 
     async def start(self):
         if self.closed:
@@ -67,6 +68,7 @@ class EvaluatorManagerImpl(EvaluatorManagerInterface):
                 stderr=asyncio.subprocess.PIPE,
             )
             self.listener = asyncio.create_task(self.listen())
+            await self.listener_ready.wait()
 
     def handle_close(self):
         for future in self.pending_evaluators.values():
@@ -90,10 +92,6 @@ class EvaluatorManagerImpl(EvaluatorManagerInterface):
             return parts[0], parts[1:]
         return "pkl", []
 
-    async def send(self, out: "OutgoingMessage"):
-        self.cmd.stdin.write(pack_message(self.encoder, out))
-        await self.cmd.stdin.drain()
-
     def get_evaluator(self, evaluator_id: int) -> EvaluatorImpl | None:
         ev = self.evaluators.get(evaluator_id)
         if not ev:
@@ -101,10 +99,15 @@ class EvaluatorManagerImpl(EvaluatorManagerInterface):
         return ev
 
     async def listen(self):
+        logging.info("listener started")
+        self.listener_ready.set()
         while not self.cmd.stdout.at_eof():
+            logging.info("waiting for message")
             line = await self.cmd.stdout.readline()
             stdout_line = await self.cmd.stdout.readline()
-            print(f"stdout: {stdout_line}")
+            logging.info(f"stdout: {stdout_line}")
+            stderr_line = await self.cmd.stderr.readline()
+            logging.info(f"stderr: {stderr_line}")
             self.decoder.feed(line)
             for item in self.decoder:
                 decoded = decode(item)
@@ -159,33 +162,19 @@ class EvaluatorManagerImpl(EvaluatorManagerInterface):
         if not self.cmd:
             await self.start()
 
-        request_id = 0
-        create_evaluator = CreateEvaluator(
-            request_id=request_id,  # TODO
-            client_resource_readers=opts.resource_readers or [],
-            client_module_readers=opts.module_readers or [],
-            code=codes.NewEvaluator,
-            **opts.__dict__,
-        )
-
-        if opts.project_dir:
-            create_evaluator.project = ProjectOrDependency(
-                projectFileUri=f"file://{opts.project_dir}/PklProject",
-                dependencies=encoded_dependencies(opts.declared_project_dependencies)
-                if opts.declared_project_dependencies
-                else None,
-            )
-
+        id, req = create_evaluator_request(opts)
         future = asyncio.Future()
-        self.pending_evaluators[request_id] = future
+        self.pending_evaluators[id] = future
 
-        await self.send(create_evaluator)
+        await send(self.cmd.stdin, pack_message(self.packer, codes.NewEvaluator, req.model_dump(exclude_none=True)))
+        logging.info("Sent create evaluator request")
 
-        stderr_line = await self.cmd.stderr.readline()
-        if stderr_line:  # read from stderr
-            raise Exception(f"Failed to start Evaluator: {stderr_line}")
+        while not self.cmd.stderr.at_eof():
+            stderr_line = await self.cmd.stderr.readline()
+            logging.info(stderr_line)
 
         response = await future
+        logging.info("Received create evaluator response")
         print(response)
         response = CreateEvaluatorResponse(**response)
         ev = EvaluatorImpl(response.evaluator_id, self)
@@ -202,8 +191,30 @@ class EvaluatorManagerImpl(EvaluatorManagerInterface):
         )
 
         return self.new_evaluator({**with_project(project), **opts.__dict__})
+    
+def pack_message(packer: msgpack.Packer, code: codes.OutgoingCode, msg) -> bytearray:
+        return packer.pack([code, msg]) 
 
+def create_evaluator_request(opts: EvaluatorOptions) -> CreateEvaluator:
+    request_id = 135
+    create_evaluator = CreateEvaluator(
+        requestId=request_id,
+        allowedModules=opts.allowed_modules,
+        clientResourceReaders=opts.resource_readers,
+        clientModuleReaders=opts.module_readers,
+        code=codes.NewEvaluator,
+    )
 
-def pack_message(packer: msgpack.Packer, msg: OutgoingMessage) -> bytearray:
-    code, *rest = msg
-    return packer.pack([code, rest])
+    if opts.project_dir:
+        create_evaluator.project = ProjectOrDependency(
+            projectFileUri=f"file://{opts.project_dir}/PklProject",
+            dependencies=encoded_dependencies(opts.declared_project_dependencies)
+            if opts.declared_project_dependencies
+            else None,
+        )
+    return request_id, create_evaluator
+
+async def send(stdin, out):
+    stdin.write(out)
+    await stdin.drain()
+

@@ -10,12 +10,20 @@
 -e file:.
 annotated-types==0.6.0
     # via pydantic
+iniconfig==2.0.0
+    # via pytest
 msgpack==1.0.8
     # via pkl-python
+packaging==23.2
+    # via pytest
+pluggy==1.4.0
+    # via pytest
 pydantic==2.6.3
     # via pkl-python
 pydantic-core==2.16.3
     # via pydantic
+pytest==8.0.2
+    # via pkl-python
 ruff==0.3.0
 typing-extensions==4.10.0
     # via pydantic

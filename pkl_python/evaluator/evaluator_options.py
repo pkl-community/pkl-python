@@ -2,14 +2,14 @@ from dataclasses import dataclass
 from typing import Optional, Dict, List, Union
 from enum import Enum
 import re
-from .reader import ResourceReader, ModuleReader
+from ..types.outgoing import ResourceReader, ModuleReader
 from ..types.project import (
     Project,
     ProjectDependencies,
     ProjectLocalDependency,
     ProjectRemoteDependency,
 )
-
+from ..types.base_model import BaseModel
 
 class OutputFormat(Enum):
     JSON = "json"
@@ -22,8 +22,7 @@ class OutputFormat(Enum):
     YAML = "yaml"
 
 
-@dataclass
-class EvaluatorOptions:
+class EvaluatorOptions(BaseModel):
     """
     EvaluatorOptions is the set of options available to control Pkl evaluation.
     """
@@ -51,10 +50,10 @@ class EvaluatorOptions:
     allowed_resources: Optional[List[str]] = None
 
     # resourceReaders are the resource readers to be used by the evaluator.
-    resource_readers: Optional[List["ResourceReader"]] = None
+    resource_readers: Optional[List[ResourceReader]] = None
 
     # moduleReaders are the set of custom module readers to be used by the evaluator.
-    module_readers: Optional[List["ModuleReader"]] = None
+    module_readers: Optional[List[ModuleReader]] = None
 
     # cacheDir is the directory where `package:` modules are cached.
     #
