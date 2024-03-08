@@ -1,5 +1,9 @@
 # pkl-python
 
+Status:
+- Evaluator: ⚠️ Not working
+- Codegen: 😶‍🌫️ Not implemented
+
 Python bindings for Pkl.
 
 ## Installation (dev)
