@@ -1,3 +1,5 @@
+from asyncio import Future
+import random
 from typing import Any, Dict
 from .module_source import ModuleSource
 from urllib.parse import urlparse
@@ -29,6 +31,7 @@ class EvaluatorImpl(Evaluator):
         self.closed = True
         self.manager.close()
     
+    @property
     def closed(self):
         return self._closed
 
@@ -41,19 +44,18 @@ class EvaluatorImpl(Evaluator):
             raise Exception("evaluator is closed")
 
         evaluate = Evaluate(
-            request_id=self.random_int63(),
-            evaluator_id=self.evaluator_id,
-            module_uri=source.uri.to_string(),
-            code=codes.Evaluate,
+            requestId=random.randint(0, 2 ** 31 - 1),
+            evaluatorId=self.evaluator_id,
+            moduleUri=source.uri,
             expr=expr,
-            module_text=source.contents,
+            moduleText=source.contents,
         )
 
-        self.pending_requests[evaluate.request_id] = evaluate
+        self.pending_requests[evaluate.requestId] = Future()
 
-        await self.manager.send(evaluate)
+        await self.manager.send(evaluate._code, evaluate)
 
-        resp = await self.pending_requests[evaluate.request_id]
+        resp = await self.pending_requests[evaluate.requestId]
         if resp.error:
             raise Exception(resp.error)
 

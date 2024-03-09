@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from .codes import OutgoingCode
+from ..types import codes
 from .base_model import BaseModel
-from typing import Dict, List, Union, Optional
+from typing import Dict, List, Literal, Union, Optional
 
 class ResourceReader(BaseModel):
     scheme: str
@@ -40,8 +40,7 @@ class CreateEvaluator(BaseModel):
     rootDir: Optional[str] = None
     cacheDir: Optional[str] = None
     project: Optional[ProjectOrDependency] = None
-    code: OutgoingCode
-
+    _code: codes.OutgoingCode = codes.NewEvaluator
 
 class Evaluate(BaseModel):
     requestId: int
@@ -49,42 +48,38 @@ class Evaluate(BaseModel):
     moduleUri: str
     expr: Optional[str] = None
     moduleText: Optional[str] = None
-    code: OutgoingCode
+    _code: codes.OutgoingCode = codes.Evaluate
 
 
 class ReadResource(BaseModel):
     requestId: int
     evaluatorId: int
     uri: str
-    code: OutgoingCode
+    _code: codes.OutgoingCode
 
 
 class ReadModule(BaseModel):
     requestId: int
     evaluatorId: int
     uri: str
-    code: OutgoingCode
-
+    _code: codes.OutgoingCode
 
 class ListResources(BaseModel):
     requestId: int
     evaluatorId: int
     uri: str
-    code: OutgoingCode
-
+    _code: codes.OutgoingCode
 
 class ListModules(BaseModel):
     requestId: int
     evaluatorId: int
     uri: str
-    code: OutgoingCode
-
+    _code: codes.OutgoingCode
 
 class CloseEvaluator(BaseModel):
     requestId: int
     evaluatorId: int
-    code: OutgoingCode
-
+    _code: codes.OutgoingCode
 
 OutgoingMessage = Union[
     CreateEvaluator,

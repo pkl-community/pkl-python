@@ -6,6 +6,7 @@ from pkl_python.evaluator.evaluator_options import EvaluatorOptions, OutputForma
 import asyncio
 
 from pkl_python.evaluator.module_source import FileSource
+from pkl_python.types.outgoing import ModuleReader
 
 async def main():
     logging.basicConfig(format='%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
@@ -13,7 +14,12 @@ async def main():
     pkl_command = os.environ.get("PKL_EXEC")
     if not pkl_command:
         raise Exception("PKL_EXEC env var must be set to path to pkl binary!")
-    options = EvaluatorOptions(output_format=OutputFormat.JSON)
+    options = EvaluatorOptions(
+            allowed_modules=["pkl:", "repl:", "file:", "customfs:"],
+            module_readers=[
+                ModuleReader(scheme="customfs", hasHierarchicalUris=True, isGlobbable=True, isLocal=True)
+            ]
+        )
     manager = EvaluatorManagerImpl()
     evaluator = await manager.new_evaluator(options)
     module_path = "tests/test.pkl"

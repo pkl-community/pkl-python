@@ -183,14 +183,10 @@ class EvaluatorManagerImpl(EvaluatorManagerInterface):
             raise Exception(f"Request ID {id} already exists")
         self.pending_evaluators[id] = future
 
-        await send(self.cmd.stdin, pack_message(self.packer, codes.NewEvaluator, req.model_dump(exclude_none=True)))
+        await self.send(codes.NewEvaluator, req)
         log.info("Sent create evaluator request")
 
-        # while not self.cmd.stderr.at_eof():
-        #     stderr_line = await self.cmd.stderr.readline()
-        #     log.info(stderr_line)
-
-        response = await future
+        response: CreateEvaluatorResponse = await future
         log.info("Received create evaluator response")
         print(response)
         ev = EvaluatorImpl(response.evaluatorId, self)
@@ -207,8 +203,10 @@ class EvaluatorManagerImpl(EvaluatorManagerInterface):
 
         return self.new_evaluator({**with_project(project), **opts.__dict__})
     
-def pack_message(packer: msgpack.Packer, code: codes.OutgoingCode, msg) -> bytearray:
-        return packer.pack([code, msg]) 
+    async def send(self, code, msg: OutgoingMessage):
+        out: bytearray = self.packer.pack([code, msg.model_dump(exclude_none=True)]) 
+        self.cmd.stdin.write(out)
+        await self.cmd.stdin.drain()
 
 def create_evaluator_request(opts: EvaluatorOptions) -> CreateEvaluator:
     request_id = 135
@@ -229,7 +227,5 @@ def create_evaluator_request(opts: EvaluatorOptions) -> CreateEvaluator:
         )
     return request_id, create_evaluator
 
-async def send(stdin, out):
-    stdin.write(out)
-    await stdin.drain()
+
 
